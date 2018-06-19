@@ -188,7 +188,7 @@ function Rain-Login{
     [Parameter(Mandatory=$False)]
     [string]$user
     )
-    Write-Host ("\n \t \tWelcome to RainDance! \n \n")
+    Write-Host '****** Welcome to RainDance! ******'
     Write-Verbose 'Attempting to Authenticate...'
     if(!$user){
         $user = Read-Host -Prompt "Enter your target username"
@@ -196,32 +196,44 @@ function Rain-Login{
     $password = Read-Host -Prompt "Enter target password" -AsSecureString
     $creds = New-Object -typename System.Management.Automation.PSCredential -argumentlist $user, $password
     $password = $NULL
-    Write-Host "[*] ATTEMPTING O365 LOGIN!"
+    Write-Host "[*] ATTEMPTING TO GET PSSESSION WITH EXCHANGE"
+    try{
+        $Session = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri "https://outlook.office365.com/powershell-liveid/" -Credential $creds -Authentication Basic -AllowRedirection
+        Import-PSSession $Session
+        Write-Host "[+] Success! You have access to exchange online mail!"
+        }
+    catch [System.Exception]{
+        Write-Host "[-] Login to Exchange Online failed. Either the user does not have access or is not licensed for Outlook"
+    }
 
+    Write-Host "[*] ATTEMPTING O365 LOGIN!"
     try{
         Connect-MsolService -Credential $creds -ErrorAction Stop
+        $Global:LOGGED_IN_USER = $user
+        Write-Host "[+] Successfully Logged In!"
+        Write-Host "[*] Gathering general domain info..."
+        $Global:O_DOMAINS = @(Get-MSOLDomain | Select-Object $_.Name)
+        $Global:Licenses = Get-MsolSubscription
+        $current_user_role = Get-MsolUserRole -UserPrincipalName $user
+        if(!($current_user_role)){
+            Write-Host "[-] Your current user has no administrative permissions."
+        }
+        else{
+            Write-Host "[+] Your current user has the following administrative privileges!"
+            Write-Output $current_user_role
+            }
+        Write-Host "[*] You currently have access to the following domains:"
+        Write-Output $O_DOMAINS.Name
+        Write-Host "[*] This company currently has the following products in use... n"
+        Write-Output $Licenses.SkuPartNumber
     }
     catch [System.Exception] {
         Write-Host "O365 - Authentication Error!"
-        Break
+        Write-Host "2FA may be enforced, or powershell is disabled for this user."
+        Write-Host "To be sure, use Connect-MsolService manually from powershell."
+        Write-Host "If successful, set $Global:LOGGED_IN_USER = 'yourtarget@domain.com' to continue."
     }
-    $Global:LOGGED_IN_USER = $user
-    Write-Host "[+] Successfully Logged In!"
-    Write-Host "[*] Gathering general domain info..."
-    $Global:O_DOMAINS = @(Get-MSOLDomain | Select-Object $_.Name)
-    $Global:Licenses = Get-MsolSubscription
-    $current_user_role = Get-MsolUserRole -UserPrincipalName $user
-    if(!($current_user_role)){
-        Write-Host "[-] Your current user has no administrative permissions."
-    }
-    else{
-        Write-Host "[+] Your current user has the following administrative privileges!"
-        Write-Output $current_user_role
-        }
-    Write-Host "[*] You currently have access to the following domains:"
-    Write-Output $O_DOMAINS.Name
-    Write-Host "[*] This company currently has the following products in use... n"
-    Write-Output $Licenses.SkuPartNumber
+
     Write-Host "---------------------------------------------------------- n"
 
     try{
@@ -246,37 +258,48 @@ function check-login{
     }
 }
 
-function Rain-GetUsers{
+function Rain-GetUsers(){
+    [CmdletBinding()]
+    param
+    (
+    [Parameter(Mandatory=$False)]
+    [Switch]$All,
+    [Int]$MaxResults
+    )
+
     if(!(check-login)){Break}
     Write-Host "[+] Gathering Usernames and details..."
     $users = @()
-    foreach($user in (Get-MSOLUser -All)){
-        $user_info = Get-MSOLUser -UserPrincipalName $user.UserPrincipalName       # Grab all user properties
-        if ($user_info.IsLicensed -eq $True){
+    Get-MSOLUser @psBoundParameters | ForEach-Object {
+        if ($_.IsLicensed -eq $True){
             $item = [Ordered]@{ 
-                Username=$user_info.UserPrincipalName
-                Name=$user_info.DisplayName
-                SignIn=$user_info.SignInName
-                Department=$user_info.Department
-                Title=$user_info.Title
-                Phone=$user_info.PhoneNumber
-                Mobile=$user_info.MobilePhone
-                Office=$user_info.Office
-                City=$user_info.City
-                State=$user_info.State
-                Location=$user_info.UsageLocation
-                LastPasswordChange=$user_info.LastPasswordChangeTimestamp
-                LastDirSync=$user_info.LastDirSyncTime
-                ObjectId=$user_info.ObjectId
+                Username=$_.UserPrincipalName
+                Name=$_.DisplayName
+                SignIn=$_.SignInName
+                Department=$_.Department
+                Title=$_.Title
+                Phone=$_.PhoneNumber
+                Mobile=$_.MobilePhone
+                Office=$_.Office
+                City=$_.City
+                State=$_.State
+                Location=$_.UsageLocation
+                LastPasswordChange=$_.LastPasswordChangeTimestamp
+                LastDirSync=$_.LastDirSyncTime
+                ObjectId=$_.ObjectId
             }
             $users += New-Object PSObject -Property $item
+            if ($users.length % 100 -eq 0){
+                Write-Host "[+] $($users.length) Users Collected"
+            }
+            if ($users.length -gt 1000){
+                Write-Host "[*] More than 1000 users have been found so far. This may take a while. Don't stop the script, even if it appears to hang"
+            }
         }
     }
 
-    if($O_USERS.length -eq 0){
-        $Global:O_USERS = $users
-    }
-    Write-Host "[+] User collection complete. Use 'Rain-Show Users' command to view data."
+    $Global:O_USERS = $users
+    Write-Host "[+] User collection complete. $($users.length) total users collected. Use 'Rain-Show Users' command to view data."
     if($verbose){
         return $users
     }
@@ -306,14 +329,13 @@ function Rain-GetRoles{
     if(!(check-login)){Break}
         Write-Host "[+] Gathering User Roles & Members..."
         $roles = @()
-        foreach($role in (Get-MSOLrole)){
-            $current_role = Get-MsolRole -ObjectId $role.ObjectId
-            if($current_role.IsEnabled){
-                if($current_role.Name.contains("Admin")){
+        Get-MSOLRole | ForEach-Object {
+            if($_.IsEnabled){
+                if($_.Name.contains("Admin")){
                     $item = [Ordered]@{
-                        Name=$($current_role.Name)
-                        ObjectId=$($current_role.ObjectID)
-                        Description=$($current_role.Description)
+                        Name=$($_.Name)
+                        ObjectId=$($_.ObjectID)
+                        Description=$($_.Description)
                         IsAdmin=$True
                     }
                     $roles += New-Object PSObject -Property $item
@@ -321,9 +343,9 @@ function Rain-GetRoles{
                 
                 else{
                     $item = [Ordered]@{
-                        Name=$($current_role.Name)
-                        ObjectId=$($current_role.ObjectID)
-                        Description=$($current_role.Description)
+                        Name=$($_.Name)
+                        ObjectId=$($_.ObjectID)
+                        Description=$($_.Description)
                         IsAdmin=$False
                     }
                     $roles += New-Object PSObject -Property $item
@@ -358,7 +380,7 @@ function Rain-DumpRoles{
     }
 }
 
-function Rain-GetAdmins{
+function Rain-GetAdmins(){
     if(!(check-login)){Break}
     Write-Host "[+] Gathering Administrator Accounts..."
     $admins = @()
@@ -374,12 +396,8 @@ function Rain-GetAdmins{
         Write-Host "================$($admin_role.Name)================"
         Write-Output $(Get-MSOLRoleMember -RoleObjectID $admin_role.ObjectId)
     }
-    if($O_ADMINS.length -eq 0){
-        $Global:O_ADMINS = $admins
-    }
-    if($O_GADMINS.length -eq 0){
-        $Global:O_GADMINS = $Global_admins
-    }
+    $Global:O_ADMINS = $admins
+    $Global:O_GADMINS = $Global_admins
     Write-Host "[+] Admins collection Complete. Use 'Rain-Show Admins' or 'Rain-Show GlobalAdmins' command to view data."
     if($verbose){
         return $admins 
@@ -615,13 +633,13 @@ function Rain-DumpAll{
         $outfile = [io.path]::combine($path, "Rain_dump.txt")
         "========================+USERS+========================" > $outfile
         $O_USERS | Sort-Object -Property Username | Format-Table >> $outfile
-        "========================+DEVICES+========================" >> $outfile
+        "=======================+DEVICES+=======================" >> $outfile
         $O_DEVICES | Sort-Object -Property Hostname | Format-Table >> $outfile
         "========================+ROLES+========================" >> $outfile
         $O_ROLES | Sort-Object -Property Username | Format-Table >> $outfile
-        "========================+GROUPS+========================" >> $outfile
+        "========================+GROUPS+=======================" >> $outfile
         $O_GROUPS | Sort-Object -Property Username | Format-Table >> $outfile
-        "========================+GLOBAL ADMINS+========================" >> $outfile
+        "====================+GLOBAL ADMINS+====================" >> $outfile
         $O_GADMINS | Sort-Object -Property Username | Format-Table >> $outfile
         
     }
