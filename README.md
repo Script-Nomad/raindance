@@ -28,6 +28,11 @@ legitimate credentials and pulls out the list of users, their mailing groups and
 in the tenant. This tool is intended to be used as an attack tool to assist penetration testers in enumerating users and select targets
 for offensive engagements.
 
+## BSides Talk
+I was given the opportunity to speak at BSides about my findings associated with my research into Office 365 that led to the development of Raindance. This video goes into some additional detail of how to use the tool effectively, along with plausible scenarios in which it can be useful. If you are interested in that talk, you can find it here.  </br></br>
+
+[![Raindance: Raining Recon from the Microsoft Cloud](https://i.ytimg.com/vi/VHPZ2YU351M/hqdefault.jpg?sqp=-oaymwEXCPYBEIoBSFryq4qpAwkIARUAAIhCGAE=&rs=AOn4CLCbfQmSWN0caw5mYY2FvoxLqNbnvg)](https://www.youtube.com/watch?v=VHPZ2YU351M)
+
 ## Features
 * Enumerates domain information within O365
 * Get the full list of users, including disabled accounts
