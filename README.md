@@ -21,6 +21,9 @@
              - Office 365 Info-Gathering Toolkit
 ```
 
+## Latest Updates
+Sorry for the delay in updates. I've been working on a cross-platform/python implementation to replace this, but it's slow going as I am doing some cert-chasing and swamped with other projects. There are some tentatively tested changes in dev, but they haven't been thoroughly put through the wringer yet. Mileage may vary. Thanks for the support :+1:
+
 ## Description
 
 Raindance uses built-in powershell modules, namely from the MSOnline & AzureAD powershell modules to log into Office 365 tenants with
